@@ -60,24 +60,24 @@ logs/
 
 # ==================== SOLUTIONS (À DÉCOMMENTER PROGRESSIVEMENT) ====================
 # Dans scripts/
-scripts/evaluate_results_solution.py
-scripts/run_benchmark_solution.py
+# scripts/evaluate_results_solution.py
+# scripts/run_benchmark_solution.py
 
 # Dans src/strategies/
-src/strategies/strategy_a_llm_solution.py
-src/strategies/strategy_b_rag_solution.py
-src/strategies/strategy_c_qa_solution.py
+# src/strategies/strategy_a_llm_solution.py
+# src/strategies/strategy_b_rag_solution.py
+# src/strategies/strategy_c_qa_solution.py
 
 # Dans src/utils/
-src/utils/embeddings_solution.py
-src/utils/llm_client_solution.py
+# src/utils/embeddings_solution.py
+# src/utils/llm_client_solution.py
 
 # ==================== DOCUMENTS FORMATEUR ====================
 # Documents pédagogiques à ne pas publier
 # docs/formateur/
-docs/NOTE_CADRAGE_exemple.md
-docs/RAPPORT_BENCHMARK_exemple.md
-docs/RAPPORT_VEILLE_exemple.md
+# docs/NOTE_CADRAGE_exemple.md
+# docs/RAPPORT_BENCHMARK_exemple.md
+# docs/RAPPORT_VEILLE_exemple.md
 
 # ==================== RESULTATS DE BENCHAMRKS ====================
 # Documents à ne pas publier
