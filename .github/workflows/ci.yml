@@ -1,0 +1,142 @@
+# =============================================================================
+# PIPELINE CI (Continuous Integration)
+# =============================================================================
+# Ce workflow exécute les tests automatiquement à chaque push ou pull request.
+#
+# Objectif : Détecter les bugs AVANT qu'ils n'arrivent en production.
+#
+# Déclencheurs :
+#   - Push sur main ou develop
+#   - Pull request vers main
+#
+# Jobs :
+#   1. lint   : Vérifie le style du code (flake8)
+#   2. test   : Exécute les tests pytest avec couverture
+# =============================================================================
+
+name: CI Pipeline
+
+# -----------------------------------------------------------------------------
+# DÉCLENCHEURS
+# -----------------------------------------------------------------------------
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# -----------------------------------------------------------------------------
+# JOBS
+# -----------------------------------------------------------------------------
+jobs:
+  
+  # ===========================================================================
+  # JOB 1 : LINT - Vérification du style de code
+  # ===========================================================================
+  lint:
+    name: 🔍 Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Étape 1 : Récupérer le code source
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Étape 2 : Installer Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      # Étape 3 : Installer les linters
+      - name: Install linters
+        run: pip install flake8
+      
+      # Étape 4 : Vérifier le code avec flake8
+      - name: Lint code
+        run: |
+          echo "🔍 Vérification du code avec flake8..."
+          flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503
+          echo "✅ Lint OK"
+  
+  # ===========================================================================
+  # JOB 2 : TEST - Exécution des tests
+  # ===========================================================================
+  test:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    needs: lint  # Attend que lint soit OK avant de lancer les tests
+    
+    steps:
+      # Étape 1 : Récupérer le code source
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Étape 2 : Installer Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      # Étape 3 : Cache des dépendances pip (accélère les builds suivants)
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      # Étape 4 : Installer les dépendances
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio httpx
+          echo "✅ Dépendances installées"
+      
+      # Étape 5 : Vérifier que les imports fonctionnent
+      - name: Verify imports
+        run: |
+          echo "🔧 Vérification des imports..."
+          python -c "from src.api.main import app; print('✅ API importée')"
+          python -c "from src.strategies.base import FAQResponse; print('✅ Strategies importées')"
+      
+      # Étape 6 : Exécuter les tests unitaires
+      - name: Run unit tests
+        run: |
+          echo "🧪 Tests unitaires..."
+          pytest tests/unit/ -v --tb=short
+      
+      # Étape 7 : Exécuter les tests d'intégration
+      # Note: Nécessite le token HuggingFace pour les appels LLM
+      - name: Run integration tests
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "🧪 Tests d'intégration..."
+          pytest tests/integration/ -v --tb=short
+      
+      # Étape 8 : Exécuter les tests système
+      - name: Run system tests
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "🧪 Tests système..."
+          pytest tests/systeme/ -v --tb=short
+      
+      # Étape 9 : Générer le rapport de couverture
+      - name: Generate coverage report
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "📊 Génération du rapport de couverture..."
+          pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing
+      
+      # Étape 10 : Uploader la couverture vers Codecov (optionnel)
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true

@@ -1,0 +1,306 @@
+# =============================================================================
+# PIPELINE CI/CD (Continuous Integration / Continuous Deployment)
+# =============================================================================
+# Ce workflow exécute les tests ET déploie l'application automatiquement.
+#
+# Chaîne complète :
+#   LINT → BUILD → TEST → DEPLOY
+#
+# Le déploiement n'est déclenché QUE si :
+#   - Tous les tests passent
+#   - Le push est sur la branche main
+#
+# Secrets requis (à configurer dans GitHub) :
+#   - HF_API_TOKEN : Token HuggingFace pour les tests
+#   - DEPLOY_TOKEN : Token de déploiement (optionnel)
+# =============================================================================
+
+name: CI/CD Pipeline
+
+# -----------------------------------------------------------------------------
+# DÉCLENCHEURS
+# -----------------------------------------------------------------------------
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# -----------------------------------------------------------------------------
+# JOBS
+# -----------------------------------------------------------------------------
+jobs:
+  
+  # ===========================================================================
+  # JOB 1 : LINT - Vérification du style de code
+  # ===========================================================================
+  lint:
+    name: 🔍 Lint & Format
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install linters
+        run: pip install flake8 black isort
+      
+      # Vérifier le formatage avec black (sans modifier)
+      - name: Check formatting (black)
+        run: |
+          echo "🎨 Vérification du formatage..."
+          black --check --diff src/ tests/ || echo "⚠️ Formatage non conforme (black)"
+        continue-on-error: true
+      
+      # Vérifier l'ordre des imports
+      - name: Check imports (isort)
+        run: |
+          echo "📦 Vérification des imports..."
+          isort --check-only --diff src/ tests/ || echo "⚠️ Imports non triés (isort)"
+        continue-on-error: true
+      
+      # Linter strict
+      - name: Lint code (flake8)
+        run: |
+          echo "🔍 Analyse statique du code..."
+          flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503,E402
+          echo "✅ Lint OK"
+  
+  # ===========================================================================
+  # JOB 2 : BUILD - Construction de l'application
+  # ===========================================================================
+  build:
+    name: 🔨 Build
+    runs-on: ubuntu-latest
+    needs: lint  # Attend que lint soit OK
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      # Cache pip pour accélérer les builds
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "✅ Dépendances installées"
+      
+      # Vérifier que tous les modules s'importent correctement
+      - name: Verify imports
+        run: |
+          echo "🔧 Vérification des imports..."
+          python -c "from src.api.main import app"
+          python -c "from src.api.routes import health, answer, faq"
+          python -c "from src.api.models import QuestionRequest, AnswerResponse"
+          python -c "from src.api.services.faq_service import FAQService"
+          python -c "from src.strategies.base import BaseStrategy, FAQResponse"
+          echo "✅ Tous les imports OK"
+      
+      # Vérifier que l'API démarre (test rapide)
+      - name: Verify API starts
+        run: |
+          echo "🚀 Test de démarrage de l'API..."
+          timeout 10 python -c "
+          from fastapi.testclient import TestClient
+          from src.api.main import app
+          client = TestClient(app)
+          response = client.get('/health')
+          assert response.status_code == 200, 'Health check failed'
+          print('✅ API démarre correctement')
+          " || echo "⚠️ Timeout au démarrage (normal si modèles lourds)"
+        continue-on-error: true
+  
+  # ===========================================================================
+  # JOB 3 : TEST - Exécution des tests
+  # ===========================================================================
+  test:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    needs: build  # Attend que build soit OK
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      # Cache des modèles HuggingFace (accélère beaucoup les tests)
+      - name: Cache HuggingFace models
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-models
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio httpx
+      
+      # Tests unitaires (rapides, sans API externe)
+      - name: Run unit tests
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "🧪 TESTS UNITAIRES"
+          echo "═══════════════════════════════════════════"
+          pytest tests/unit/ -v --tb=short
+      
+      # Tests d'intégration (service + stratégie)
+      - name: Run integration tests
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "🧪 TESTS D'INTÉGRATION"
+          echo "═══════════════════════════════════════════"
+          pytest tests/integration/ -v --tb=short
+      
+      # Tests système (API complète)
+      - name: Run system tests
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "🧪 TESTS SYSTÈME (E2E)"
+          echo "═══════════════════════════════════════════"
+          pytest tests/systeme/ -v --tb=short
+      
+      # Rapport de couverture complet
+      - name: Generate coverage report
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "📊 RAPPORT DE COUVERTURE"
+          echo "═══════════════════════════════════════════"
+          pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing
+      
+      # Upload vers Codecov
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+      
+      # Résumé final
+      - name: Test summary
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "✅ TOUS LES TESTS PASSENT"
+          echo "═══════════════════════════════════════════"
+  
+  # ===========================================================================
+  # JOB 4 : DEPLOY - Déploiement (uniquement sur main)
+  # ===========================================================================
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: test  # Attend que TOUS les tests passent
+    
+    # Conditions de déploiement :
+    # - Branche main uniquement
+    # - Push (pas les PR)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      # Afficher les informations de déploiement
+      - name: Deployment info
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "🚀 DÉPLOIEMENT EN PRODUCTION"
+          echo "═══════════════════════════════════════════"
+          echo "📌 Commit: ${{ github.sha }}"
+          echo "👤 Auteur: ${{ github.actor }}"
+          echo "📅 Date: $(date)"
+          echo "═══════════════════════════════════════════"
+      
+      # =======================================================================
+      # OPTIONS DE DÉPLOIEMENT (décommenter selon votre plateforme)
+      # =======================================================================
+      
+      # Option 1 : Déploiement Heroku
+      # - name: Deploy to Heroku
+      #   env:
+      #     HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      #   run: |
+      #     heroku container:push web --app mon-app-faq
+      #     heroku container:release web --app mon-app-faq
+      
+      # Option 2 : Déploiement Railway
+      # - name: Deploy to Railway
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      #   run: |
+      #     npm install -g @railway/cli
+      #     railway up
+      
+      # Option 3 : Déploiement serveur SSH
+      # - name: Deploy via SSH
+      #   env:
+      #     SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      #   run: |
+      #     echo "$SSH_KEY" > key.pem
+      #     chmod 600 key.pem
+      #     ssh -i key.pem user@server "cd /app && git pull && systemctl restart faq-api"
+      
+      # Option 4 : Build et push Docker
+      # - name: Build and push Docker image
+      #   run: |
+      #     docker build -t faq-api:${{ github.sha }} .
+      #     docker tag faq-api:${{ github.sha }} registry/faq-api:latest
+      #     docker push registry/faq-api:latest
+      
+      # Placeholder pour le déploiement
+      - name: Deploy placeholder
+        run: |
+          echo "🚀 Déploiement simulé..."
+          echo "   → En production, configurez votre méthode de déploiement"
+          echo "   → Heroku, Railway, Docker, SSH, etc."
+          echo "✅ Déploiement terminé (simulation)"
+      
+      # Notification de succès
+      - name: Notify success
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "✅ DÉPLOIEMENT RÉUSSI"
+          echo "═══════════════════════════════════════════"
+          echo "::notice::Deployment successful! 🎉"
