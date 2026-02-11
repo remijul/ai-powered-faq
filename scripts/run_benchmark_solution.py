@@ -184,7 +184,7 @@ class BenchmarkRunner:
             
             # Extraire la réponse et la confiance
             '''
-            # Probleme de format de la repons en cas d'erreur
+            # Probleme de format de la reponse en cas d'erreur
             if isinstance(response, dict):
                 answer = response.get("answer", str(response))
                 confidence = response.get("confidence")

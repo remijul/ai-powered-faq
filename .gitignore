@@ -83,6 +83,10 @@ logs/
 # Documents à ne pas publier
 results/
 
+# ==================== FICHIERS API ====================
+# Documents à ne pas publier
+src/api
+
 # ==================== FICHIERS DES TESTS ====================
 # Documents à ne pas publier
 src/tests/test_api.py

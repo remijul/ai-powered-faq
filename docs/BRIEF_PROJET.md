@@ -11,6 +11,7 @@ Le client souhaite mettre en place un **assistant intelligent** capable de répo
 ## Objectifs de la mission
 
 ### Objectif principal
+
 Concevoir, développer et déployer une API d'assistance FAQ intégrant un LLM, en suivant une démarche rigoureuse de benchmark pour sélectionner la meilleure approche technique.
 
 ### Objectifs spécifiques
